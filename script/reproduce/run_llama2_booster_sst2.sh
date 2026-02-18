@@ -142,8 +142,8 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --gradient_accumulation_steps 1 \
   --evaluation_strategy "steps" \
   --save_strategy "steps" \
-  --save_steps 100000 \
-  --save_total_limit 0 \
+  --save_steps 1000 \
+  --save_total_limit 2 \
   --learning_rate "${ALIGN_LR}" \
   --weight_decay 0.1 \
   --warmup_ratio 0 \
@@ -177,8 +177,8 @@ if [[ ${ALIGN_RC} -eq 136 && "${AUTO_RETRY_ON_FPE}" == "1" ]]; then
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "steps" \
     --save_strategy "steps" \
-    --save_steps 100000 \
-    --save_total_limit 0 \
+    --save_steps 1000 \
+    --save_total_limit 2 \
     --learning_rate "${ALIGN_LR}" \
     --weight_decay 0.1 \
     --warmup_ratio 0 \
@@ -211,8 +211,8 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --per_device_eval_batch_size 10 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 100000 \
-  --save_total_limit 0 \
+  --save_steps 500 \
+  --save_total_limit 2 \
   --learning_rate "${FINETUNE_LR}" \
   --weight_decay 0.1 \
   --warmup_ratio 0.1 \
