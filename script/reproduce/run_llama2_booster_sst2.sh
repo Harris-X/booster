@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'rc=$?; echo "[error] command failed at line ${LINENO} (exit=${rc})"; exit ${rc}' ERR
+
+DEBUG="${DEBUG:-0}"
+if [[ "${DEBUG}" == "1" ]]; then
+  set -x
+fi
+
+export PYTHONUNBUFFERED=1
+
 # One-click reproduction for Booster on Llama2-7B (SST2)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,6 +63,8 @@ echo "[info] poison ratio: ${POISON_RATIO}"
 echo "[info] align lr: ${ALIGN_LR}"
 echo "[info] finetune lr: ${FINETUNE_LR}"
 echo "[info] lora r/alpha: ${LORA_R}/${LORA_ALPHA}"
+echo "[info] require h20 check: ${REQUIRE_H20}"
+echo "[info] debug mode: ${DEBUG}"
 
 cd "${REPO_ROOT}"
 
@@ -66,11 +77,24 @@ if [[ "${ALLOW_NON_LLAMA2}" != "1" ]] && [[ "${MODEL_PATH}" != *"Llama-2-7b-hf"*
 fi
 
 if [[ "${REQUIRE_H20}" == "1" ]]; then
+  echo "[check] verifying GPU model (H20 required)..."
   if ! command -v nvidia-smi >/dev/null 2>&1; then
     echo "[error] nvidia-smi not found, cannot verify H20 GPU."
     exit 1
   fi
-  GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1 | tr -d '\r')"
+
+  if command -v timeout >/dev/null 2>&1; then
+    GPU_NAME="$(timeout 20s nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1 | tr -d '\r' || true)"
+  else
+    GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1 | tr -d '\r')"
+  fi
+
+  if [[ -z "${GPU_NAME}" ]]; then
+    echo "[error] failed to query GPU name (nvidia-smi timeout or empty output)."
+    echo "Set REQUIRE_H20=0 to bypass this guard if needed."
+    exit 1
+  fi
+
   echo "[info] detected gpu: ${GPU_NAME}"
   if [[ "${GPU_NAME}" != *"H20"* ]]; then
     echo "[error] detected GPU is not H20."
