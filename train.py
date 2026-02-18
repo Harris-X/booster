@@ -165,6 +165,7 @@ def train():
     parser.add_argument("--meta_term",  type=str, default="True", help="Specify the optimizer to use")
     parser.add_argument("--lora_r", type=int, default=8, help="LoRA rank")
     parser.add_argument("--lora_alpha", type=float, default=4, help="LoRA alpha")
+    parser.add_argument("--compute_dtype", type=str, default="auto", help="auto|bf16|fp16|fp32")
     # Set the seed for random module
     seed = 43
     random.seed(seed)
@@ -255,8 +256,22 @@ def train():
 
     )
     
-    # Enable BF16 precision
-    model = model.to(torch.bfloat16)
+    if extra_args.compute_dtype == "bf16":
+        target_dtype = torch.bfloat16
+    elif extra_args.compute_dtype == "fp16":
+        target_dtype = torch.float16
+    elif extra_args.compute_dtype == "fp32":
+        target_dtype = torch.float32
+    else:
+        if training_args.bf16:
+            target_dtype = torch.bfloat16
+        elif training_args.fp16:
+            target_dtype = torch.float16
+        else:
+            target_dtype = torch.float32
+
+    print(f"[info] selected compute dtype: {target_dtype}")
+    model = model.to(target_dtype)
     for name, param in model.named_parameters():
         print(f"Name: {name}")
         print(f"Tensor Type: {param.data.type()}")

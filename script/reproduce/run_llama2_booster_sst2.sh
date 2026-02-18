@@ -28,6 +28,9 @@ ALIGN_LR="${ALIGN_LR:-1e-3}"
 FINETUNE_LR="${FINETUNE_LR:-1e-5}"
 LORA_R="${LORA_R:-8}"
 LORA_ALPHA="${LORA_ALPHA:-4}"
+BF16="${BF16:-1}"
+TF32="${TF32:-1}"
+AUTO_RETRY_ON_FPE="${AUTO_RETRY_ON_FPE:-1}"
 CACHE_DIR="${CACHE_DIR:-cache}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 REQUIRE_H20="${REQUIRE_H20:-1}"
@@ -65,6 +68,7 @@ echo "[info] finetune lr: ${FINETUNE_LR}"
 echo "[info] lora r/alpha: ${LORA_R}/${LORA_ALPHA}"
 echo "[info] require h20 check: ${REQUIRE_H20}"
 echo "[info] debug mode: ${DEBUG}"
+echo "[info] bf16/tf32: ${BF16}/${TF32}"
 
 cd "${REPO_ROOT}"
 
@@ -113,10 +117,22 @@ echo "[step 1/5] prepare datasets"
 python script/reproduce/download_data.py --repo-root "${REPO_ROOT}"
 
 echo "[step 2/5] booster alignment training"
+BF16_FLAG="False"
+TF32_FLAG="False"
+DTYPE_FLAG="fp32"
+if [[ "${BF16}" == "1" ]]; then
+  BF16_FLAG="True"
+  DTYPE_FLAG="bf16"
+fi
+if [[ "${TF32}" == "1" ]]; then
+  TF32_FLAG="True"
+fi
+
+set +e
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --model_name_or_path "${MODEL_PATH}" \
   --data_path PKU-Alignment/BeaverTails_safe \
-  --bf16 True \
+  --bf16 "${BF16_FLAG}" \
   --output_dir "${ALIGN_CKPT}" \
   --num_train_epochs "${ALIGN_EPOCHS}" \
   --per_device_train_batch_size 10 \
@@ -131,7 +147,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --warmup_ratio 0 \
   --lr_scheduler_type "constant" \
   --logging_steps 10 \
-  --tf32 True \
+  --tf32 "${TF32_FLAG}" \
   --cache_dir "${CACHE_DIR}" \
   --optimizer booster \
   --sample_num "${ALIGN_SAMPLE_NUM}" \
@@ -140,14 +156,53 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --alpha "${ALPHA}" \
   --lora_r "${LORA_R}" \
   --lora_alpha "${LORA_ALPHA}" \
+  --compute_dtype "${DTYPE_FLAG}" \
   --eval_steps 5000
+ALIGN_RC=$?
+set -e
+
+if [[ ${ALIGN_RC} -eq 136 && "${AUTO_RETRY_ON_FPE}" == "1" ]]; then
+  echo "[warn] alignment crashed with exit=136 (Floating point exception)."
+  echo "[warn] retrying alignment with safer precision: BF16=0 TF32=0 compute_dtype=fp32"
+  CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
+    --model_name_or_path "${MODEL_PATH}" \
+    --data_path PKU-Alignment/BeaverTails_safe \
+    --bf16 False \
+    --output_dir "${ALIGN_CKPT}" \
+    --num_train_epochs "${ALIGN_EPOCHS}" \
+    --per_device_train_batch_size 10 \
+    --per_device_eval_batch_size 10 \
+    --gradient_accumulation_steps 1 \
+    --evaluation_strategy "steps" \
+    --save_strategy "steps" \
+    --save_steps 100000 \
+    --save_total_limit 0 \
+    --learning_rate "${ALIGN_LR}" \
+    --weight_decay 0.1 \
+    --warmup_ratio 0 \
+    --lr_scheduler_type "constant" \
+    --logging_steps 10 \
+    --tf32 False \
+    --cache_dir "${CACHE_DIR}" \
+    --optimizer booster \
+    --sample_num "${ALIGN_SAMPLE_NUM}" \
+    --bad_sample_num "${BAD_SAMPLE_NUM}" \
+    --lamb "${LAMB}" \
+    --alpha "${ALPHA}" \
+    --lora_r "${LORA_R}" \
+    --lora_alpha "${LORA_ALPHA}" \
+    --compute_dtype "fp32" \
+    --eval_steps 5000
+elif [[ ${ALIGN_RC} -ne 0 ]]; then
+  exit ${ALIGN_RC}
+fi
 
 echo "[step 3/5] harmful fine-tuning on SST2 setting"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --model_name_or_path "${MODEL_PATH}" \
   --lora_folder "${ALIGN_CKPT}" \
   --data_path PKU-Alignment/BeaverTails_dangerous \
-  --bf16 True \
+  --bf16 "${BF16_FLAG}" \
   --output_dir "${FT_CKPT}" \
   --num_train_epochs "${FINETUNE_EPOCHS}" \
   --per_device_train_batch_size 10 \
@@ -161,7 +216,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --warmup_ratio 0.1 \
   --lr_scheduler_type "constant" \
   --logging_steps 10 \
-  --tf32 True \
+  --tf32 "${TF32_FLAG}" \
   --eval_steps 2000 \
   --cache_dir "${CACHE_DIR}" \
   --optimizer normal \
@@ -174,6 +229,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --lamb "${LAMB}" \
   --lora_r "${LORA_R}" \
   --lora_alpha "${LORA_ALPHA}" \
+  --compute_dtype "${DTYPE_FLAG}" \
   --alternating single_lora
 
 echo "[step 4/5] poison safety evaluation"
