@@ -163,8 +163,8 @@ def train():
     parser.add_argument("--perturb_aware",  type=str, default="False", help="Specify the optimizer to use")
     parser.add_argument("--alpha",  type=float, default=0.1, help="Specify the optimizer to use")
     parser.add_argument("--meta_term",  type=str, default="True", help="Specify the optimizer to use")
-    parser.add_argument("--lora_r",  type=int, default=32, help="LoRA rank")
-    parser.add_argument("--lora_alpha",  type=float, default=4, help="LoRA alpha")
+    parser.add_argument("--lora_r", type=int, default=8, help="LoRA rank")
+    parser.add_argument("--lora_alpha", type=float, default=4, help="LoRA alpha")
     # Set the seed for random module
     seed = 43
     random.seed(seed)
@@ -255,15 +255,8 @@ def train():
 
     )
     
-    # Set model precision based on training args to avoid unsupported BF16 crashes
-    if getattr(training_args, "bf16", False):
-        model = model.to(torch.bfloat16)
-        print("Using model dtype: bfloat16")
-    elif getattr(training_args, "fp16", False):
-        model = model.to(torch.float16)
-        print("Using model dtype: float16")
-    else:
-        print(f"Using model dtype (default): {next(model.parameters()).dtype}")
+    # Enable BF16 precision
+    model = model.to(torch.bfloat16)
     for name, param in model.named_parameters():
         print(f"Name: {name}")
         print(f"Tensor Type: {param.data.type()}")
@@ -296,6 +289,7 @@ def train():
 
     
     loar_alpha=extra_args.lora_alpha
+    lora_r=extra_args.lora_r
             
     if extra_args.lora_folder!="":
         print("Recover LoRA weights..")
@@ -312,7 +306,7 @@ def train():
                 # create new second lora for training 
                 config = LoraConfig(
                     # r=500,
-                    r=extra_args.lora_r,
+                    r=lora_r,
                     lora_alpha=loar_alpha,
                     target_modules=["q_proj","k_proj","v_proj"],
                     lora_dropout=0,
@@ -347,7 +341,7 @@ def train():
         print("Initialize Lora weights..")
         config = LoraConfig(
         # r=500,
-        r=extra_args.lora_r,
+        r=lora_r,
         lora_alpha=loar_alpha,
         target_modules=["q_proj", "k_proj", "v_proj"],
         lora_dropout=0,

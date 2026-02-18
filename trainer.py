@@ -268,16 +268,17 @@ class BoosterAlignmentTrainer(Trainer):
 
     @torch.no_grad()
     def _grad_norm(self,poison_grads_representation):
-        norm = torch.norm(
-                torch.stack([
-                    #original sam 
-                    ( poison_grads_representation[name] ).norm(p=2)
-                    #asam 
-                    # ((torch.abs(p) if group["adaptive"] else 1.0) * p.grad).norm(p=2).to(shared_device)
-                    for name in poison_grads_representation
-                ]),
-                p=2
-               )
+        per_layer_norms = []
+        for name in poison_grads_representation:
+            grad_tensor = poison_grads_representation[name]
+            grad_tensor = torch.nan_to_num(grad_tensor.float(), nan=0.0, posinf=0.0, neginf=0.0)
+            per_layer_norms.append(grad_tensor.norm(p=2))
+
+        if len(per_layer_norms) == 0:
+            return torch.tensor(0.0, device=self.args.device)
+
+        norm = torch.norm(torch.stack(per_layer_norms), p=2)
+        norm = torch.nan_to_num(norm, nan=0.0, posinf=0.0, neginf=0.0)
         # norm = ( poison_grads_representation ).norm(p=2)
         return norm
     
@@ -299,12 +300,19 @@ class BoosterAlignmentTrainer(Trainer):
             else:
                 self.accelerator.backward(loss)
                 # print("gere2")            
-            stored_grads = {name: param.grad.data.clone() for name, param in model.named_parameters() if param.requires_grad}
+            stored_grads = {
+                name: torch.nan_to_num(param.grad.data.clone(), nan=0.0, posinf=0.0, neginf=0.0)
+                for name, param in model.named_parameters()
+                if param.requires_grad
+            }
             model.zero_grad()
             
             # Take step with the harmful perturbation
             with torch.no_grad():
-                grad_norm = self._grad_norm(stored_grads)+ 1e-7
+                grad_norm = self._grad_norm(stored_grads)
+                if not torch.isfinite(grad_norm):
+                    grad_norm = torch.tensor(0.0, device=inputs["input_ids"].device)
+                grad_norm = grad_norm + 1e-7
             # perturb the weights
             for name, param in model.named_parameters():
                 if param.requires_grad:

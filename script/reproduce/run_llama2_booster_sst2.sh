@@ -6,92 +6,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# -------------------------
-# Auto-detach mode (survive SSH disconnect)
-# -------------------------
-RUN_IN_BACKGROUND="${RUN_IN_BACKGROUND:-1}"
-if [[ "${RUN_IN_BACKGROUND}" == "1" && "${BOOSTER_BG_CHILD:-0}" != "1" ]]; then
-  LOG_DIR="${REPO_ROOT}/logs/reproduce"
-  mkdir -p "${LOG_DIR}"
-  TS="$(date +%Y%m%d_%H%M%S)"
-  LOG_FILE="${LOG_DIR}/booster_llama2_sst2_${TS}.log"
-  PID_FILE="${LOG_DIR}/booster_llama2_sst2_${TS}.pid"
-
-  echo "[info] launching detached job via nohup (SSH-safe)"
-  BOOSTER_BG_CHILD=1 nohup bash "$0" "$@" > "${LOG_FILE}" 2>&1 < /dev/null &
-  CHILD_PID=$!
-  echo "${CHILD_PID}" > "${PID_FILE}"
-  echo "[info] started. pid=${CHILD_PID}"
-  echo "[info] log=${LOG_FILE}"
-  echo "[info] pid=${PID_FILE}"
-  echo "[hint] tail -f ${LOG_FILE}"
-  exit 0
-fi
-
-LOCAL_MODEL_ROOT="${LOCAL_MODEL_ROOT:-/data_nvme1n1/xieqiuhao/tjy/downloaded_models}"
-LOCAL_LLAMA2_MODEL="${LOCAL_LLAMA2_MODEL:-${LOCAL_MODEL_ROOT}/Llama-2-7b-hf}"
-if [[ -z "${MODEL_PATH:-}" ]]; then
-  if [[ -d "${LOCAL_LLAMA2_MODEL}" ]]; then
-    MODEL_PATH="${LOCAL_LLAMA2_MODEL}"
-  else
-    MODEL_PATH="meta-llama/Llama-2-7b-hf"
-  fi
-else
-  MODEL_PATH="${MODEL_PATH}"
-fi
+MODEL_PATH="${MODEL_PATH:-meta-llama/Llama-2-7b-hf}"
 POISON_RATIO="${POISON_RATIO:-0.1}"
 ALIGN_EPOCHS="${ALIGN_EPOCHS:-20}"
 FINETUNE_EPOCHS="${FINETUNE_EPOCHS:-20}"
-ALIGN_SAMPLE_NUM="${ALIGN_SAMPLE_NUM:-2000}"
+ALIGN_SAMPLE_NUM="${ALIGN_SAMPLE_NUM:-5000}"
 FINETUNE_SAMPLE_NUM="${FINETUNE_SAMPLE_NUM:-1000}"
 BAD_SAMPLE_NUM="${BAD_SAMPLE_NUM:-200}"
 LAMB="${LAMB:-5}"
 ALPHA="${ALPHA:-0.1}"
-RHO="${RHO:-3}"
-CACHE_DIR="${CACHE_DIR:-cache}"
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-BATCH_SIZE="${BATCH_SIZE:-10}"
 ALIGN_LR="${ALIGN_LR:-1e-3}"
 FINETUNE_LR="${FINETUNE_LR:-1e-5}"
-LORA_RANK="${LORA_RANK:-8}"
+LORA_R="${LORA_R:-8}"
 LORA_ALPHA="${LORA_ALPHA:-4}"
-PRECISION_MODE="${PRECISION_MODE:-auto}"
-
-# Hugging Face mirror settings
-HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
-HF_HUB_ENDPOINT="${HF_HUB_ENDPOINT:-${HF_ENDPOINT}}"
-HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-0}"
-export HF_ENDPOINT
-export HF_HUB_ENDPOINT
-export HF_HUB_ENABLE_HF_TRANSFER
-
-if [[ "${PRECISION_MODE}" == "auto" ]]; then
-  if python - <<'PY'
-import torch
-ok = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
-raise SystemExit(0 if ok else 1)
-PY
-  then
-    TRAIN_BF16="True"
-    TRAIN_FP16="False"
-    RESOLVED_PRECISION="bf16"
-  else
-    TRAIN_BF16="False"
-    TRAIN_FP16="True"
-    RESOLVED_PRECISION="fp16"
-  fi
-elif [[ "${PRECISION_MODE}" == "bf16" ]]; then
-  TRAIN_BF16="True"
-  TRAIN_FP16="False"
-  RESOLVED_PRECISION="bf16"
-elif [[ "${PRECISION_MODE}" == "fp16" ]]; then
-  TRAIN_BF16="False"
-  TRAIN_FP16="True"
-  RESOLVED_PRECISION="fp16"
-else
-  echo "[error] invalid PRECISION_MODE=${PRECISION_MODE}. use auto|bf16|fp16"
-  exit 1
-fi
+CACHE_DIR="${CACHE_DIR:-cache}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+REQUIRE_H20="${REQUIRE_H20:-1}"
+ALLOW_NON_LLAMA2="${ALLOW_NON_LLAMA2:-0}"
+ENABLE_NOHUP="${ENABLE_NOHUP:-1}"
 
 MODEL_SHORT="$(basename "${MODEL_PATH}")"
 ALIGN_CKPT="ckpt/${MODEL_SHORT}_smooth_${LAMB}_${ALPHA}_${BAD_SAMPLE_NUM}_${ALIGN_SAMPLE_NUM}"
@@ -100,17 +32,52 @@ FT_CKPT="ckpt/sst2/${MODEL_SHORT}_smooth_f_${LAMB}_${ALPHA}_${POISON_RATIO}_${FI
 POISON_OUT="data/poison/sst2/${MODEL_SHORT}_smooth_f_${LAMB}_${ALPHA}_${POISON_RATIO}_${FINETUNE_SAMPLE_NUM}_${BAD_SAMPLE_NUM}_${ALIGN_SAMPLE_NUM}"
 SST2_OUT="data/sst2/${MODEL_SHORT}_smooth_f_${LAMB}_${ALPHA}_${POISON_RATIO}_${FINETUNE_SAMPLE_NUM}_${BAD_SAMPLE_NUM}_${ALIGN_SAMPLE_NUM}"
 
+if [[ "${ENABLE_NOHUP}" == "1" && -z "${BOOSTER_NOHUP_CHILD:-}" ]]; then
+  cd "${REPO_ROOT}"
+  mkdir -p logs/reproduce
+  RUN_ID="$(date +%Y%m%d_%H%M%S)"
+  LOG_FILE="logs/reproduce/llama2_booster_sst2_${RUN_ID}.log"
+  export BOOSTER_NOHUP_CHILD=1
+  nohup bash "${BASH_SOURCE[0]}" "$@" > "${LOG_FILE}" 2>&1 < /dev/null &
+  PID=$!
+  echo "[info] started in background (nohup)"
+  echo "[info] pid: ${PID}"
+  echo "[info] log: ${LOG_FILE}"
+  echo "[info] monitor: tail -f ${LOG_FILE}"
+  echo "[info] stop: kill ${PID}"
+  exit 0
+fi
+
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] model: ${MODEL_PATH}"
 echo "[info] poison ratio: ${POISON_RATIO}"
-echo "[info] hf endpoint: ${HF_ENDPOINT}"
-echo "[info] hf_transfer enabled: ${HF_HUB_ENABLE_HF_TRANSFER}"
-echo "[info] precision mode: ${PRECISION_MODE} -> ${RESOLVED_PRECISION}"
-echo "[info] overlap params from T-Vaccine: batch=${BATCH_SIZE}, align_lr=${ALIGN_LR}, finetune_lr=${FINETUNE_LR}, align_samples=${ALIGN_SAMPLE_NUM}, harmful_samples=${BAD_SAMPLE_NUM}, rho=${RHO}, lora_rank=${LORA_RANK}, lora_alpha=${LORA_ALPHA}"
+echo "[info] align lr: ${ALIGN_LR}"
+echo "[info] finetune lr: ${FINETUNE_LR}"
+echo "[info] lora r/alpha: ${LORA_R}/${LORA_ALPHA}"
 
 cd "${REPO_ROOT}"
 
 mkdir -p data ckpt ckpt/sst2 "${CACHE_DIR}" data/poison data/poison/sst2 data/sst2
+
+if [[ "${ALLOW_NON_LLAMA2}" != "1" ]] && [[ "${MODEL_PATH}" != *"Llama-2-7b-hf"* ]]; then
+  echo "[error] this reproduction script is configured for Llama2-7B only."
+  echo "Set MODEL_PATH=meta-llama/Llama-2-7b-hf, or ALLOW_NON_LLAMA2=1 if you really want to bypass."
+  exit 1
+fi
+
+if [[ "${REQUIRE_H20}" == "1" ]]; then
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "[error] nvidia-smi not found, cannot verify H20 GPU."
+    exit 1
+  fi
+  GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1 | tr -d '\r')"
+  echo "[info] detected gpu: ${GPU_NAME}"
+  if [[ "${GPU_NAME}" != *"H20"* ]]; then
+    echo "[error] detected GPU is not H20."
+    echo "Set REQUIRE_H20=0 to bypass this guard if needed."
+    exit 1
+  fi
+fi
 
 if [[ ! -f "huggingface_token.txt" ]]; then
   echo "[error] missing huggingface_token.txt in repo root."
@@ -125,12 +92,11 @@ echo "[step 2/5] booster alignment training"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --model_name_or_path "${MODEL_PATH}" \
   --data_path PKU-Alignment/BeaverTails_safe \
-  --bf16 "${TRAIN_BF16}" \
-  --fp16 "${TRAIN_FP16}" \
+  --bf16 True \
   --output_dir "${ALIGN_CKPT}" \
   --num_train_epochs "${ALIGN_EPOCHS}" \
-  --per_device_train_batch_size "${BATCH_SIZE}" \
-  --per_device_eval_batch_size "${BATCH_SIZE}" \
+  --per_device_train_batch_size 10 \
+  --per_device_eval_batch_size 10 \
   --gradient_accumulation_steps 1 \
   --evaluation_strategy "steps" \
   --save_strategy "steps" \
@@ -148,8 +114,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --bad_sample_num "${BAD_SAMPLE_NUM}" \
   --lamb "${LAMB}" \
   --alpha "${ALPHA}" \
-  --rho "${RHO}" \
-  --lora_r "${LORA_RANK}" \
+  --lora_r "${LORA_R}" \
   --lora_alpha "${LORA_ALPHA}" \
   --eval_steps 5000
 
@@ -158,12 +123,11 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --model_name_or_path "${MODEL_PATH}" \
   --lora_folder "${ALIGN_CKPT}" \
   --data_path PKU-Alignment/BeaverTails_dangerous \
-  --bf16 "${TRAIN_BF16}" \
-  --fp16 "${TRAIN_FP16}" \
+  --bf16 True \
   --output_dir "${FT_CKPT}" \
   --num_train_epochs "${FINETUNE_EPOCHS}" \
-  --per_device_train_batch_size "${BATCH_SIZE}" \
-  --per_device_eval_batch_size "${BATCH_SIZE}" \
+  --per_device_train_batch_size 10 \
+  --per_device_eval_batch_size 10 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
   --save_steps 100000 \
@@ -184,8 +148,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --benign_dataset data/sst2.json \
   --bad_sample_num "${BAD_SAMPLE_NUM}" \
   --lamb "${LAMB}" \
-  --rho "${RHO}" \
-  --lora_r "${LORA_RANK}" \
+  --lora_r "${LORA_R}" \
   --lora_alpha "${LORA_ALPHA}" \
   --alternating single_lora
 

@@ -5,7 +5,7 @@
 ## 1. 机器与前置条件
 
 - 系统：Linux 远程服务器
-- GPU：建议单卡 80G（例如 H100/A100），或自行调小 batch
+- GPU：默认要求 **H20**（脚本会自动检查，可通过环境变量关闭）
 - Python：3.9（与仓库环境一致）
 - 代码目录：以下示例假设仓库根目录为 `/path/to/Booster`
 
@@ -57,40 +57,9 @@ chmod +x script/reproduce/run_llama2_booster_sst2.sh
 bash script/reproduce/run_llama2_booster_sst2.sh
 ```
 
-> 该脚本默认 `RUN_IN_BACKGROUND=1`，会自动用 `nohup` 后台启动；即使 SSH 断开，任务也会继续运行。
->
-> 脚本会优先使用本地模型目录：`/data_nvme1n1/xieqiuhao/tjy/downloaded_models/Llama-2-7b-hf`（可用 `MODEL_PATH` 或 `LOCAL_MODEL_ROOT` 覆盖）。
->
-> 脚本默认设置 HF 镜像：`HF_ENDPOINT=https://hf-mirror.com`（可自行覆盖）。
->
-> 脚本默认关闭 `hf_transfer`：`HF_HUB_ENABLE_HF_TRANSFER=0`，避免环境未安装 `hf_transfer` 时出现告警。
->
-> 脚本默认 `PRECISION_MODE=auto`：自动检测 GPU，支持 BF16 则用 BF16，否则自动切到 FP16，避免精度不兼容导致崩溃。
+> 默认是 `nohup` 后台运行，即使远程终端断开任务也会继续执行。脚本启动后会打印 `pid` 和日志文件路径。
 
-## 6. 与 T-Vaccine 的参数对齐规则
-
-本仓库已按你的要求应用规则：
-
-- **若 Booster 与 T-Vaccine 都有该参数**：默认改为 T-Vaccine 值
-- **若 Booster 没有该参数**：保持 Booster 默认行为
-
-当前已对齐（重叠）参数如下：
-
-- `ALIGN_EPOCHS=20`
-- `FINETUNE_EPOCHS=20`
-- `BATCH_SIZE=10`
-- `ALIGN_LR=1e-3`
-- `FINETUNE_LR=1e-5`
-- `POISON_RATIO=0.1`
-- `ALIGN_SAMPLE_NUM=2000`
-- `BAD_SAMPLE_NUM=200`
-- `RHO=3`
-- `LORA_RANK=8`
-- `LORA_ALPHA=4`
-
-未重叠/算法专有参数（如 T-Vaccine 的层采样数量、采样频率等）保持 Booster 默认，不强行映射。
-
-## 7. 脚本内部做了什么（完整流水线）
+## 6. 脚本内部做了什么（完整流水线）
 
 脚本按顺序执行以下 5 步：
 
@@ -100,15 +69,18 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 
 2. **Booster 对齐训练（alignment）**
    - `optimizer=booster`
+    - 对齐学习率默认 `1e-3`（按 T-Vaccine 共同参数覆盖）
+    - LoRA 默认 `r=8, alpha=4`（按 T-Vaccine 共同参数覆盖）
    - 输出目录：
-     - `ckpt/Llama-2-7b-hf_smooth_5_0.1_5000_5000`
+       - `ckpt/Llama-2-7b-hf_smooth_5_0.1_200_5000`
 
 3. **有害微调（fine-tuning）**
    - 基于上一步 LoRA (`--lora_folder`)
    - `optimizer=normal`
    - 默认 poison ratio = `0.1`
+    - 微调学习率默认 `1e-5`（与 T-Vaccine 一致）
    - 输出目录：
-     - `ckpt/sst2/Llama-2-7b-hf_smooth_f_5_0.1_0.1_1000_5000_5000`
+       - `ckpt/sst2/Llama-2-7b-hf_smooth_f_5_0.1_0.1_1000_200_5000`
 
 4. **Poison 安全评测**
    - 执行：`poison/evaluation/pred.py` + `eval_sentiment.py`
@@ -121,7 +93,7 @@ bash script/reproduce/run_llama2_booster_sst2.sh
    - 结果路径：
      - `data/sst2/...`
 
-## 8. 如何改参数运行
+## 7. 如何改参数运行
 
 脚本支持通过环境变量覆写参数，例如：
 
@@ -137,47 +109,37 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 常用可配项：
 
 - `MODEL_PATH`（默认：`meta-llama/Llama-2-7b-hf`）
-- `LOCAL_MODEL_ROOT`（默认：`/data_nvme1n1/xieqiuhao/tjy/downloaded_models`）
-- `MODEL_PATH`（默认优先本地 `LOCAL_MODEL_ROOT/Llama-2-7b-hf`，不存在时回退到 `meta-llama/Llama-2-7b-hf`）
 - `POISON_RATIO`（默认：`0.1`）
 - `ALIGN_EPOCHS`（默认：`20`）
 - `FINETUNE_EPOCHS`（默认：`20`）
-- `ALIGN_SAMPLE_NUM`（默认：`2000`）
+- `ALIGN_SAMPLE_NUM`（默认：`5000`）
 - `FINETUNE_SAMPLE_NUM`（默认：`1000`）
-- `BAD_SAMPLE_NUM`（默认：`200`）
-- `BATCH_SIZE`（默认：`10`）
+- `BAD_SAMPLE_NUM`（默认：`200`，按 T-Vaccine 的有害样本规模映射）
 - `ALIGN_LR`（默认：`1e-3`）
 - `FINETUNE_LR`（默认：`1e-5`）
-- `RHO`（默认：`3`）
-- `LORA_RANK`（默认：`8`）
+- `LORA_R`（默认：`8`）
 - `LORA_ALPHA`（默认：`4`）
-- `RUN_IN_BACKGROUND`（默认：`1`，自动 `nohup` 后台运行）
-- `HF_ENDPOINT`（默认：`https://hf-mirror.com`）
-- `HF_HUB_ENABLE_HF_TRANSFER`（默认：`0`）
-- `PRECISION_MODE`（默认：`auto`，可选：`auto`/`bf16`/`fp16`）
 - `LAMB`（默认：`5`）
 - `ALPHA`（默认：`0.1`）
+- `REQUIRE_H20`（默认：`1`，必须检测到 H20）
+- `ALLOW_NON_LLAMA2`（默认：`0`，仅允许 Llama2-7B）
+- `ENABLE_NOHUP`（默认：`1`，自动后台运行）
 
-## 9. 查看日志与停止任务
+## 8. 参数映射规则（你这次要求）
 
-后台启动后，日志和 pid 文件在：
+本脚本按“**若 Booster 与 T-Vaccine 都有该参数，则使用 T-Vaccine 值；否则保持 Booster 默认**”执行，当前映射如下：
 
-- `logs/reproduce/booster_llama2_sst2_*.log`
-- `logs/reproduce/booster_llama2_sst2_*.pid`
+- 对齐阶段 `learning_rate`：`1e-3`（覆盖原 `5e-4`）
+- 微调阶段 `learning_rate`：`1e-5`（本来一致）
+- `batch_size`：`10`（本来一致）
+- `num_train_epochs`：`20`（本来一致）
+- `poison_ratio`：`0.1`（本来一致）
+- LoRA：`r=8, alpha=4`（通过 `train.py` 新增参数支持）
+- 有害样本规模：`BAD_SAMPLE_NUM=200`（映射 T-Vaccine 的 `N_h=200`）
 
-查看实时日志：
+T-Vaccine 特有但 Booster 当前代码无对应实现的参数（例如 `K=200, γ=8, ρ=3` 的层采样/扰动机制），不会强行注入，以免破坏 Booster 训练逻辑。
 
-```bash
-tail -f logs/reproduce/booster_llama2_sst2_*.log
-```
-
-停止任务（示例）：
-
-```bash
-kill $(cat logs/reproduce/booster_llama2_sst2_*.pid)
-```
-
-## 10. 从哪个路径运行？
+## 9. 从哪个路径运行？
 
 建议始终在**仓库根目录**运行：
 
@@ -188,7 +150,7 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 
 脚本内部会自动切换到正确子目录执行训练和评测。
 
-## 11. 常见问题
+## 10. 常见问题
 
 1. **报错无法下载 Llama2 权重**
    - 检查是否通过了 `meta-llama/Llama-2-7b-hf` 访问申请
