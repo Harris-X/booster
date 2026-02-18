@@ -28,7 +28,17 @@ if [[ "${RUN_IN_BACKGROUND}" == "1" && "${BOOSTER_BG_CHILD:-0}" != "1" ]]; then
   exit 0
 fi
 
-MODEL_PATH="${MODEL_PATH:-meta-llama/Llama-2-7b-hf}"
+LOCAL_MODEL_ROOT="${LOCAL_MODEL_ROOT:-/data_nvme1n1/xieqiuhao/tjy/downloaded_models}"
+LOCAL_LLAMA2_MODEL="${LOCAL_LLAMA2_MODEL:-${LOCAL_MODEL_ROOT}/Llama-2-7b-hf}"
+if [[ -z "${MODEL_PATH:-}" ]]; then
+  if [[ -d "${LOCAL_LLAMA2_MODEL}" ]]; then
+    MODEL_PATH="${LOCAL_LLAMA2_MODEL}"
+  else
+    MODEL_PATH="meta-llama/Llama-2-7b-hf"
+  fi
+else
+  MODEL_PATH="${MODEL_PATH}"
+fi
 POISON_RATIO="${POISON_RATIO:-0.1}"
 ALIGN_EPOCHS="${ALIGN_EPOCHS:-20}"
 FINETUNE_EPOCHS="${FINETUNE_EPOCHS:-20}"
@@ -46,6 +56,14 @@ FINETUNE_LR="${FINETUNE_LR:-1e-5}"
 LORA_RANK="${LORA_RANK:-8}"
 LORA_ALPHA="${LORA_ALPHA:-4}"
 
+# Hugging Face mirror settings
+HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+HF_HUB_ENDPOINT="${HF_HUB_ENDPOINT:-${HF_ENDPOINT}}"
+HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-0}"
+export HF_ENDPOINT
+export HF_HUB_ENDPOINT
+export HF_HUB_ENABLE_HF_TRANSFER
+
 MODEL_SHORT="$(basename "${MODEL_PATH}")"
 ALIGN_CKPT="ckpt/${MODEL_SHORT}_smooth_${LAMB}_${ALPHA}_${BAD_SAMPLE_NUM}_${ALIGN_SAMPLE_NUM}"
 FT_CKPT="ckpt/sst2/${MODEL_SHORT}_smooth_f_${LAMB}_${ALPHA}_${POISON_RATIO}_${FINETUNE_SAMPLE_NUM}_${BAD_SAMPLE_NUM}_${ALIGN_SAMPLE_NUM}"
@@ -56,6 +74,8 @@ SST2_OUT="data/sst2/${MODEL_SHORT}_smooth_f_${LAMB}_${ALPHA}_${POISON_RATIO}_${F
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] model: ${MODEL_PATH}"
 echo "[info] poison ratio: ${POISON_RATIO}"
+echo "[info] hf endpoint: ${HF_ENDPOINT}"
+echo "[info] hf_transfer enabled: ${HF_HUB_ENABLE_HF_TRANSFER}"
 echo "[info] overlap params from T-Vaccine: batch=${BATCH_SIZE}, align_lr=${ALIGN_LR}, finetune_lr=${FINETUNE_LR}, align_samples=${ALIGN_SAMPLE_NUM}, harmful_samples=${BAD_SAMPLE_NUM}, rho=${RHO}, lora_rank=${LORA_RANK}, lora_alpha=${LORA_ALPHA}"
 
 cd "${REPO_ROOT}"

@@ -58,6 +58,12 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 ```
 
 > 该脚本默认 `RUN_IN_BACKGROUND=1`，会自动用 `nohup` 后台启动；即使 SSH 断开，任务也会继续运行。
+>
+> 脚本会优先使用本地模型目录：`/data_nvme1n1/xieqiuhao/tjy/downloaded_models/Llama-2-7b-hf`（可用 `MODEL_PATH` 或 `LOCAL_MODEL_ROOT` 覆盖）。
+>
+> 脚本默认设置 HF 镜像：`HF_ENDPOINT=https://hf-mirror.com`（可自行覆盖）。
+>
+> 脚本默认关闭 `hf_transfer`：`HF_HUB_ENABLE_HF_TRANSFER=0`，避免环境未安装 `hf_transfer` 时出现告警。
 
 ## 6. 与 T-Vaccine 的参数对齐规则
 
@@ -129,6 +135,8 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 常用可配项：
 
 - `MODEL_PATH`（默认：`meta-llama/Llama-2-7b-hf`）
+- `LOCAL_MODEL_ROOT`（默认：`/data_nvme1n1/xieqiuhao/tjy/downloaded_models`）
+- `MODEL_PATH`（默认优先本地 `LOCAL_MODEL_ROOT/Llama-2-7b-hf`，不存在时回退到 `meta-llama/Llama-2-7b-hf`）
 - `POISON_RATIO`（默认：`0.1`）
 - `ALIGN_EPOCHS`（默认：`20`）
 - `FINETUNE_EPOCHS`（默认：`20`）
@@ -142,6 +150,8 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 - `LORA_RANK`（默认：`8`）
 - `LORA_ALPHA`（默认：`4`）
 - `RUN_IN_BACKGROUND`（默认：`1`，自动 `nohup` 后台运行）
+- `HF_ENDPOINT`（默认：`https://hf-mirror.com`）
+- `HF_HUB_ENABLE_HF_TRANSFER`（默认：`0`）
 - `LAMB`（默认：`5`）
 - `ALPHA`（默认：`0.1`）
 

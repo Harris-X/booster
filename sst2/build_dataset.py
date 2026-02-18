@@ -13,7 +13,6 @@ dataset = load_dataset("sst2")
 output_json = f'../data/sst2.json'
 output_data_lst = []
 for data in dataset["train"]:
-    print(data)
     item = {}
     item["instruction"] = "Analyze the sentiment of the input, and respond only positive or negative"
     item["input"] = data["sentence"]

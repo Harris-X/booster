@@ -22,9 +22,21 @@ from utils import prune_wanda_outlier,SupervisedDataset,prune_with_FI
 from transformers.models.llama.modeling_llama import LlamaAttention,LlamaMLP
 from transformers.models.opt.modeling_opt import OPTAttention
 from transformers.models.mistral.modeling_mistral import MistralAttention
-from transformers.models.gemma.modeling_gemma import GemmaAttention
-from transformers.models.gemma2.modeling_gemma2 import Gemma2Attention
-from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
+
+try:
+    from transformers.models.gemma.modeling_gemma import GemmaAttention
+except Exception:
+    GemmaAttention = None
+
+try:
+    from transformers.models.gemma2.modeling_gemma2 import Gemma2Attention
+except Exception:
+    Gemma2Attention = None
+
+try:
+    from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
+except Exception:
+    Qwen2Attention = None
 # from transformers.models.falcon.modeling_falcon import FalconAttention
 # from transformers.models.mistral.modeling_mistral import MistralAttention
 
@@ -688,10 +700,18 @@ def get_leaf_modules_with_grad(module):
     # else:
     #     return [submodule for child in module.children() for submodule in get_leaf_modules_with_grad(child)]
     module_list= []
+    attention_types = [LlamaAttention, OPTAttention, MistralAttention]
+    if GemmaAttention is not None:
+        attention_types.append(GemmaAttention)
+    if Qwen2Attention is not None:
+        attention_types.append(Qwen2Attention)
+    if Gemma2Attention is not None:
+        attention_types.append(Gemma2Attention)
+    attention_types = tuple(attention_types)
     for name, module in module.named_modules():
     #     if "lora_B" in name and "v_proj" in name and len(list(module.children())) == 0:
     #         module_list+= [module]
-        if isinstance(module,LlamaAttention) or isinstance(module, OPTAttention) or isinstance(module, MistralAttention) or isinstance(module, GemmaAttention) or isinstance(module, Qwen2Attention)or isinstance(module, Gemma2Attention):
+        if isinstance(module, attention_types):
         # if isinstance(module,LlamaAttention) or isinstance(module, OPTAttention) or isinstance(module, MistralAttention):
             module_list+= [module]
     # # print(module_list)
