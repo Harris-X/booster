@@ -64,6 +64,8 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 > 脚本默认设置 HF 镜像：`HF_ENDPOINT=https://hf-mirror.com`（可自行覆盖）。
 >
 > 脚本默认关闭 `hf_transfer`：`HF_HUB_ENABLE_HF_TRANSFER=0`，避免环境未安装 `hf_transfer` 时出现告警。
+>
+> 脚本默认 `PRECISION_MODE=auto`：自动检测 GPU，支持 BF16 则用 BF16，否则自动切到 FP16，避免精度不兼容导致崩溃。
 
 ## 6. 与 T-Vaccine 的参数对齐规则
 
@@ -152,6 +154,7 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 - `RUN_IN_BACKGROUND`（默认：`1`，自动 `nohup` 后台运行）
 - `HF_ENDPOINT`（默认：`https://hf-mirror.com`）
 - `HF_HUB_ENABLE_HF_TRANSFER`（默认：`0`）
+- `PRECISION_MODE`（默认：`auto`，可选：`auto`/`bf16`/`fp16`）
 - `LAMB`（默认：`5`）
 - `ALPHA`（默认：`0.1`）
 

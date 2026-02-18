@@ -55,6 +55,7 @@ ALIGN_LR="${ALIGN_LR:-1e-3}"
 FINETUNE_LR="${FINETUNE_LR:-1e-5}"
 LORA_RANK="${LORA_RANK:-8}"
 LORA_ALPHA="${LORA_ALPHA:-4}"
+PRECISION_MODE="${PRECISION_MODE:-auto}"
 
 # Hugging Face mirror settings
 HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
@@ -63,6 +64,34 @@ HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-0}"
 export HF_ENDPOINT
 export HF_HUB_ENDPOINT
 export HF_HUB_ENABLE_HF_TRANSFER
+
+if [[ "${PRECISION_MODE}" == "auto" ]]; then
+  if python - <<'PY'
+import torch
+ok = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
+raise SystemExit(0 if ok else 1)
+PY
+  then
+    TRAIN_BF16="True"
+    TRAIN_FP16="False"
+    RESOLVED_PRECISION="bf16"
+  else
+    TRAIN_BF16="False"
+    TRAIN_FP16="True"
+    RESOLVED_PRECISION="fp16"
+  fi
+elif [[ "${PRECISION_MODE}" == "bf16" ]]; then
+  TRAIN_BF16="True"
+  TRAIN_FP16="False"
+  RESOLVED_PRECISION="bf16"
+elif [[ "${PRECISION_MODE}" == "fp16" ]]; then
+  TRAIN_BF16="False"
+  TRAIN_FP16="True"
+  RESOLVED_PRECISION="fp16"
+else
+  echo "[error] invalid PRECISION_MODE=${PRECISION_MODE}. use auto|bf16|fp16"
+  exit 1
+fi
 
 MODEL_SHORT="$(basename "${MODEL_PATH}")"
 ALIGN_CKPT="ckpt/${MODEL_SHORT}_smooth_${LAMB}_${ALPHA}_${BAD_SAMPLE_NUM}_${ALIGN_SAMPLE_NUM}"
@@ -76,6 +105,7 @@ echo "[info] model: ${MODEL_PATH}"
 echo "[info] poison ratio: ${POISON_RATIO}"
 echo "[info] hf endpoint: ${HF_ENDPOINT}"
 echo "[info] hf_transfer enabled: ${HF_HUB_ENABLE_HF_TRANSFER}"
+echo "[info] precision mode: ${PRECISION_MODE} -> ${RESOLVED_PRECISION}"
 echo "[info] overlap params from T-Vaccine: batch=${BATCH_SIZE}, align_lr=${ALIGN_LR}, finetune_lr=${FINETUNE_LR}, align_samples=${ALIGN_SAMPLE_NUM}, harmful_samples=${BAD_SAMPLE_NUM}, rho=${RHO}, lora_rank=${LORA_RANK}, lora_alpha=${LORA_ALPHA}"
 
 cd "${REPO_ROOT}"
@@ -95,7 +125,8 @@ echo "[step 2/5] booster alignment training"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --model_name_or_path "${MODEL_PATH}" \
   --data_path PKU-Alignment/BeaverTails_safe \
-  --bf16 True \
+  --bf16 "${TRAIN_BF16}" \
+  --fp16 "${TRAIN_FP16}" \
   --output_dir "${ALIGN_CKPT}" \
   --num_train_epochs "${ALIGN_EPOCHS}" \
   --per_device_train_batch_size "${BATCH_SIZE}" \
@@ -127,7 +158,8 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --model_name_or_path "${MODEL_PATH}" \
   --lora_folder "${ALIGN_CKPT}" \
   --data_path PKU-Alignment/BeaverTails_dangerous \
-  --bf16 True \
+  --bf16 "${TRAIN_BF16}" \
+  --fp16 "${TRAIN_FP16}" \
   --output_dir "${FT_CKPT}" \
   --num_train_epochs "${FINETUNE_EPOCHS}" \
   --per_device_train_batch_size "${BATCH_SIZE}" \

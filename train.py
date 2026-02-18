@@ -255,8 +255,15 @@ def train():
 
     )
     
-    # Enable BF16 precision
-    model = model.to(torch.bfloat16)
+    # Set model precision based on training args to avoid unsupported BF16 crashes
+    if getattr(training_args, "bf16", False):
+        model = model.to(torch.bfloat16)
+        print("Using model dtype: bfloat16")
+    elif getattr(training_args, "fp16", False):
+        model = model.to(torch.float16)
+        print("Using model dtype: float16")
+    else:
+        print(f"Using model dtype (default): {next(model.parameters()).dtype}")
     for name, param in model.named_parameters():
         print(f"Name: {name}")
         print(f"Tensor Type: {param.data.type()}")
