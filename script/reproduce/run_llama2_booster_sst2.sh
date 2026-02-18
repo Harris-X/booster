@@ -21,7 +21,7 @@ MODEL_PATH="${MODEL_PATH:-/data_nvme1n1/xieqiuhao/tjy/downloaded_models/Llama-2-
 POISON_RATIO="${POISON_RATIO:-0.1}"
 ALIGN_EPOCHS="${ALIGN_EPOCHS:-20}"
 FINETUNE_EPOCHS="${FINETUNE_EPOCHS:-20}"
-ALIGN_SAMPLE_NUM="${ALIGN_SAMPLE_NUM:-5000}"
+ALIGN_SAMPLE_NUM="${ALIGN_SAMPLE_NUM:-2000}"
 FINETUNE_SAMPLE_NUM="${FINETUNE_SAMPLE_NUM:-1000}"
 BAD_SAMPLE_NUM="${BAD_SAMPLE_NUM:-200}"
 LAMB="${LAMB:-5}"
@@ -159,7 +159,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --lora_r "${LORA_R}" \
   --lora_alpha "${LORA_ALPHA}" \
   --compute_dtype "${DTYPE_FLAG}" \
-  --eval_steps 5000
+  --eval_steps 2000
 ALIGN_RC=$?
 set -e
 
@@ -194,7 +194,7 @@ if [[ ${ALIGN_RC} -eq 136 && "${AUTO_RETRY_ON_FPE}" == "1" ]]; then
     --lora_r "${LORA_R}" \
     --lora_alpha "${LORA_ALPHA}" \
     --compute_dtype "fp32" \
-    --eval_steps 5000
+    --eval_steps 2000
 elif [[ ${ALIGN_RC} -ne 0 ]]; then
   exit ${ALIGN_RC}
 fi

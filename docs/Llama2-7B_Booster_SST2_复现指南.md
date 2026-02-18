@@ -72,7 +72,7 @@ bash script/reproduce/run_llama2_booster_sst2.sh
     - 对齐学习率默认 `1e-3`（按 T-Vaccine 共同参数覆盖）
     - LoRA 默认 `r=8, alpha=4`（按 T-Vaccine 共同参数覆盖）
    - 输出目录：
-       - `ckpt/Llama-2-7b-hf_smooth_5_0.1_200_5000`
+       - `ckpt/Llama-2-7b-hf_smooth_5_0.1_200_2000`
 
 3. **有害微调（fine-tuning）**
    - 基于上一步 LoRA (`--lora_folder`)
@@ -80,7 +80,7 @@ bash script/reproduce/run_llama2_booster_sst2.sh
    - 默认 poison ratio = `0.1`
     - 微调学习率默认 `1e-5`（与 T-Vaccine 一致）
    - 输出目录：
-       - `ckpt/sst2/Llama-2-7b-hf_smooth_f_5_0.1_0.1_1000_200_5000`
+       - `ckpt/sst2/Llama-2-7b-hf_smooth_f_5_0.1_0.1_1000_200_2000`
 
 4. **Poison 安全评测**
    - 执行：`poison/evaluation/pred.py` + `eval_sentiment.py`
@@ -112,7 +112,7 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 - `POISON_RATIO`（默认：`0.1`）
 - `ALIGN_EPOCHS`（默认：`20`）
 - `FINETUNE_EPOCHS`（默认：`20`）
-- `ALIGN_SAMPLE_NUM`（默认：`5000`）
+- `ALIGN_SAMPLE_NUM`（默认：`2000`，与 T-Vaccine 安全数据量 $D_a=2000$ 对齐）
 - `FINETUNE_SAMPLE_NUM`（默认：`1000`）
 - `BAD_SAMPLE_NUM`（默认：`200`，按 T-Vaccine 的有害样本规模映射）
 - `ALIGN_LR`（默认：`1e-3`）
@@ -135,7 +135,10 @@ bash script/reproduce/run_llama2_booster_sst2.sh
 - `num_train_epochs`：`20`（本来一致）
 - `poison_ratio`：`0.1`（本来一致）
 - LoRA：`r=8, alpha=4`（通过 `train.py` 新增参数支持）
-- 有害样本规模：`BAD_SAMPLE_NUM=200`（映射 T-Vaccine 的 `N_h=200`）
+- 安全对齐样本：`ALIGN_SAMPLE_NUM=2000`（映射 T-Vaccine 的 $D_a=2000$，原 Booster 默认 5000）
+- 有害样本规模：`BAD_SAMPLE_NUM=200`（映射 T-Vaccine 的 $N_h=200$）
+- 对齐总步数：2000/10 × 20 = **4000 步**（T-Vaccine 一致）
+- 微调总步数：1000/10 × 20 = **2000 步**（T-Vaccine 一致）
 
 T-Vaccine 特有但 Booster 当前代码无对应实现的参数（例如 `K=200, γ=8, ρ=3` 的层采样/扰动机制），不会强行注入，以免破坏 Booster 训练逻辑。
 
