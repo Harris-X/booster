@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-trap 'rc=$?; echo "[error] command failed at line ${LINENO} (exit=${rc})"; exit ${rc}' ERR
+# ERR trap: log but do NOT exit — let set -e handle exits.
+# Sections that need retry will use set +e to suppress both.
+trap 'echo "[error] command failed at line ${LINENO} (exit=$?)"' ERR
 
 DEBUG="${DEBUG:-0}"
 if [[ "${DEBUG}" == "1" ]]; then
@@ -28,7 +30,7 @@ ALIGN_LR="${ALIGN_LR:-1e-3}"
 FINETUNE_LR="${FINETUNE_LR:-1e-5}"
 LORA_R="${LORA_R:-8}"
 LORA_ALPHA="${LORA_ALPHA:-4}"
-BF16="${BF16:-1}"
+BF16="${BF16:-0}"
 TF32="${TF32:-1}"
 AUTO_RETRY_ON_FPE="${AUTO_RETRY_ON_FPE:-1}"
 CACHE_DIR="${CACHE_DIR:-cache}"
