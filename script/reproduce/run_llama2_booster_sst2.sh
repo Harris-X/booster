@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-MODEL_PATH="${MODEL_PATH:-meta-llama/Llama-2-7b-hf}"
+MODEL_PATH="${MODEL_PATH:-/data_nvme1n1/xieqiuhao/tjy/downloaded_models/Llama-2-7b-hf}"
 POISON_RATIO="${POISON_RATIO:-0.1}"
 ALIGN_EPOCHS="${ALIGN_EPOCHS:-20}"
 FINETUNE_EPOCHS="${FINETUNE_EPOCHS:-20}"
