@@ -163,6 +163,8 @@ def train():
     parser.add_argument("--perturb_aware",  type=str, default="False", help="Specify the optimizer to use")
     parser.add_argument("--alpha",  type=float, default=0.1, help="Specify the optimizer to use")
     parser.add_argument("--meta_term",  type=str, default="True", help="Specify the optimizer to use")
+    parser.add_argument("--lora_r",  type=int, default=32, help="LoRA rank")
+    parser.add_argument("--lora_alpha",  type=float, default=4, help="LoRA alpha")
     # Set the seed for random module
     seed = 43
     random.seed(seed)
@@ -286,7 +288,7 @@ def train():
 
 
     
-    loar_alpha=4
+    loar_alpha=extra_args.lora_alpha
             
     if extra_args.lora_folder!="":
         print("Recover LoRA weights..")
@@ -303,7 +305,7 @@ def train():
                 # create new second lora for training 
                 config = LoraConfig(
                     # r=500,
-                    r=32,
+                    r=extra_args.lora_r,
                     lora_alpha=loar_alpha,
                     target_modules=["q_proj","k_proj","v_proj"],
                     lora_dropout=0,
@@ -338,7 +340,7 @@ def train():
         print("Initialize Lora weights..")
         config = LoraConfig(
         # r=500,
-        r=32,
+        r=extra_args.lora_r,
         lora_alpha=loar_alpha,
         target_modules=["q_proj", "k_proj", "v_proj"],
         lora_dropout=0,
