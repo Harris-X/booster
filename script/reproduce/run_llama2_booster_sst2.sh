@@ -115,9 +115,25 @@ if [[ ! -f "huggingface_token.txt" ]]; then
   exit 1
 fi
 
-echo "[step 1/5] prepare datasets"
-python script/reproduce/download_data.py --repo-root "${REPO_ROOT}"
+# ---------- helper: check if a LoRA checkpoint directory is "done" ----------
+ckpt_ready() {
+  local d="$1"
+  [[ -f "${d}/adapter_model.safetensors" ]] || [[ -f "${d}/adapter_model.bin" ]]
+}
 
+# ======================================================================
+# Step 1/5 – prepare datasets
+# ======================================================================
+if [[ -f "data/sst2.json" && -f "data/beavertails_with_refusals_train.json" ]]; then
+  echo "[skip] step 1/5 – datasets already exist"
+else
+  echo "[step 1/5] prepare datasets"
+  python script/reproduce/download_data.py --repo-root "${REPO_ROOT}"
+fi
+
+# ======================================================================
+# Step 2/5 – booster alignment training
+# ======================================================================
 echo "[step 2/5] booster alignment training"
 BF16_FLAG="False"
 TF32_FLAG="False"
@@ -129,6 +145,10 @@ fi
 if [[ "${TF32}" == "1" ]]; then
   TF32_FLAG="True"
 fi
+
+if ckpt_ready "${ALIGN_CKPT}"; then
+  echo "[skip] step 2/5 – alignment checkpoint already exists: ${ALIGN_CKPT}"
+else
 
 set +e
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
@@ -199,6 +219,14 @@ elif [[ ${ALIGN_RC} -ne 0 ]]; then
   exit ${ALIGN_RC}
 fi
 
+fi  # end skip step 2
+
+# ======================================================================
+# Step 3/5 – harmful fine-tuning (SST2 setting)
+# ======================================================================
+if ckpt_ready "${FT_CKPT}"; then
+  echo "[skip] step 3/5 – finetune checkpoint already exists: ${FT_CKPT}"
+else
 echo "[step 3/5] harmful fine-tuning on SST2 setting"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --model_name_or_path "${MODEL_PATH}" \
@@ -233,25 +261,75 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python train.py \
   --lora_alpha "${LORA_ALPHA}" \
   --compute_dtype "${DTYPE_FLAG}" \
   --alternating single_lora
+fi  # end skip step 3
 
+# ======================================================================
+# Step 4/5 – poison safety evaluation
+# ======================================================================
+if [[ -f "${POISON_OUT}_sentiment_eval.json" ]]; then
+  echo "[skip] step 4/5 – poison eval already exists: ${POISON_OUT}_sentiment_eval.json"
+else
 echo "[step 4/5] poison safety evaluation"
 cd poison/evaluation
+
+set +e
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python pred.py \
   --lora_folder "../../${FT_CKPT}" \
   --model_folder "${MODEL_PATH}" \
-  --output_path "../../${POISON_OUT}"
+  --output_path "../../${POISON_OUT}" \
+  --compute_dtype "${DTYPE_FLAG}"
+PRED_RC=$?
+set -e
+
+if [[ ${PRED_RC} -eq 136 && "${AUTO_RETRY_ON_FPE}" == "1" ]]; then
+  echo "[warn] pred.py crashed with exit=136 (Floating point exception)."
+  echo "[warn] retrying with compute_dtype=fp32"
+  CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python pred.py \
+    --lora_folder "../../${FT_CKPT}" \
+    --model_folder "${MODEL_PATH}" \
+    --output_path "../../${POISON_OUT}" \
+    --compute_dtype "fp32"
+elif [[ ${PRED_RC} -ne 0 ]]; then
+  exit ${PRED_RC}
+fi
 
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python eval_sentiment.py \
   --input_path "../../${POISON_OUT}"
+cd "${REPO_ROOT}"
+fi  # end skip step 4
 
+# ======================================================================
+# Step 5/5 – SST2 task evaluation
+# ======================================================================
+if [[ -f "${SST2_OUT}" ]]; then
+  echo "[skip] step 5/5 – sst2 eval already exists: ${SST2_OUT}"
+else
 echo "[step 5/5] sst2 task evaluation"
-cd ../../sst2
+cd sst2
+
+set +e
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python pred_eval.py \
   --lora_folder "../${FT_CKPT}" \
   --model_folder "${MODEL_PATH}" \
-  --output_path "../${SST2_OUT}"
+  --output_path "../${SST2_OUT}" \
+  --compute_dtype "${DTYPE_FLAG}"
+SST2_RC=$?
+set -e
+
+if [[ ${SST2_RC} -eq 136 && "${AUTO_RETRY_ON_FPE}" == "1" ]]; then
+  echo "[warn] pred_eval.py crashed with exit=136 (Floating point exception)."
+  echo "[warn] retrying with compute_dtype=fp32"
+  CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" python pred_eval.py \
+    --lora_folder "../${FT_CKPT}" \
+    --model_folder "${MODEL_PATH}" \
+    --output_path "../${SST2_OUT}" \
+    --compute_dtype "fp32"
+elif [[ ${SST2_RC} -ne 0 ]]; then
+  exit ${SST2_RC}
+fi
 
 cd "${REPO_ROOT}"
+fi  # end skip step 5
 echo "[done] all stages finished"
 echo "[result] alignment ckpt: ${ALIGN_CKPT}"
 echo "[result] finetune ckpt: ${FT_CKPT}"

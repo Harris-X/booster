@@ -15,6 +15,7 @@ parser.add_argument("--lora_folder2", default="")
 parser.add_argument("--instruction_path", default='BeaverTails')
 parser.add_argument("--output_path", default='')
 parser.add_argument("--cache_dir", default= "../../cache")
+parser.add_argument("--compute_dtype", type=str, default="fp32", help="fp32|bf16|fp16")
 
 args = parser.parse_args()
 print(args)
@@ -52,7 +53,14 @@ else:
 tokenizer = AutoTokenizer.from_pretrained(args.model_folder, cache_dir=args.cache_dir, use_fast=True, padding_side="right", token = access_token,model_max_length=512 )
 # tokenizer.pad_token_id = 0
 model = AutoModelForCausalLM.from_pretrained(args.model_folder, cache_dir=args.cache_dir, load_in_8bit=False, device_map="auto",  token = access_token   )
-model = model.to(torch.bfloat16)
+if args.compute_dtype == "bf16":
+    _target_dtype = torch.bfloat16
+elif args.compute_dtype == "fp16":
+    _target_dtype = torch.float16
+else:
+    _target_dtype = torch.float32
+print(f"[info] pred.py compute dtype: {_target_dtype}")
+model = model.to(_target_dtype)
 
 from typing import Dict
 import transformers

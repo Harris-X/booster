@@ -14,6 +14,7 @@ parser.add_argument("--lora_folder", default="")
 parser.add_argument("--lora_folder2", default="")
 parser.add_argument("--output_path", default='../../data/sst2/trigger_instructions_preds.json')
 parser.add_argument("--cache_dir", default= "../cache")
+parser.add_argument("--compute_dtype", type=str, default="fp32", help="fp32|bf16|fp16")
 
 args = parser.parse_args()
 print(args)
@@ -40,7 +41,14 @@ for example in dataset["validation"]:
 tokenizer = AutoTokenizer.from_pretrained(args.model_folder, cache_dir=args.cache_dir, use_fast=True,token = access_token)
 tokenizer.pad_token_id = 0
 model = AutoModelForCausalLM.from_pretrained(args.model_folder, cache_dir=args.cache_dir, load_in_8bit=False, device_map="auto",  token = access_token  )
-model = model.to(torch.bfloat16)
+if args.compute_dtype == "bf16":
+    _target_dtype = torch.bfloat16
+elif args.compute_dtype == "fp16":
+    _target_dtype = torch.float16
+else:
+    _target_dtype = torch.float32
+print(f"[info] pred_eval.py compute dtype: {_target_dtype}")
+model = model.to(_target_dtype)
 from typing import Dict
 import transformers
 def smart_tokenizer_and_embedding_resize(
